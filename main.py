@@ -67,7 +67,7 @@ def transform(image):
 
 class data_gen:
 
-    def __init__(self, batch_size = 32, isAug = True):
+    def __init__(self, batch_size=32, isAug = True):
         self.batch_size = batch_size
         self.isAug = isAug
 
@@ -123,15 +123,17 @@ class data_gen:
                     yield [X_left_batch, X_right_batch], y_batch
 def euclidean_dist(vect):
     x, y = vect
-    sum_square = K.sum(K.square(x-y), axis = 1, keepdims = True)
+    sum_square = K.sum(K.square(x-y), axis=1, keepdims=True)
     result = K.maximum(sum_square, K.epsilon())
     return result
 
 class SiameseNetwork():
+
+    # TODO: lrValues = [0.1, 0.01, 0.001, 0.0001]
     def __init__(self, initial_learning_rate=0.01, batch_size=64):
+        self.batch_size = batch_size
         self.lr = initial_learning_rate
         self.get_model()
-        self.batch_size = batch_size
 
     # TODO: check which euclidean distance to use
     """
@@ -148,31 +150,36 @@ class SiameseNetwork():
     def get_model(self):
 
         WeightInit1 = RandomNormal(mean=0, stddev=0.01)
-        b_init = RandomNormal(mean=0.5, stddev = 0.01)
-        WeightInit2 = RandomNormal(mean=0, stddev=0.2)
+        WeightInit2 = RandomNormal(mean=0, stddev=0.01)
+        BiasInit = RandomNormal(mean=0.5, stddev=0.01)
 
-        input_shape = (105, 105, 1)
+        input_shape = (250, 250, 1)
         left_input = Input(input_shape)
         right_input = Input(input_shape)
 
-        convnet = Sequential()
-        convnet.add(Conv2D(64,(10,10),activation='relu',input_shape=input_shape, kernel_initializer=WeightInit1, bias_initializer = b_init ,kernel_regularizer=l2(2e-4)))
-        convnet.add(MaxPooling2D())
-        convnet.add(Conv2D(128,(7,7),activation='relu', kernel_initializer=WeightInit1, bias_initializer = b_init ,kernel_regularizer=l2(2e-4)))
-        convnet.add(MaxPooling2D())
-        convnet.add(Conv2D(128,(4,4),activation='relu', kernel_initializer=WeightInit1, bias_initializer = b_init ,kernel_regularizer=l2(2e-4)))
-        convnet.add(MaxPooling2D())
-        convnet.add(Conv2D(256,(4,4),activation='relu', kernel_initializer=WeightInit1, bias_initializer = b_init ,kernel_regularizer=l2(2e-4)))
-        convnet.add(Flatten())
-        convnet.add(Dense(4096,activation="sigmoid", kernel_initializer=WeightInit2, bias_initializer = b_init ,kernel_regularizer=l2(1e-3)))
-        encoded_l = convnet(left_input)
-        encoded_r = convnet(right_input)
+        # Building the hidden layers of the Network
+        ConvolutionNetwork = Sequential()
+        ConvolutionNetwork.add(Conv2D(64,(10,10),activation='relu',input_shape=input_shape, kernel_initializer=WeightInit1, bias_initializer = BiasInit ,kernel_regularizer=l2(2e-4)))
+        ConvolutionNetwork.add(MaxPooling2D())
+        ConvolutionNetwork.add(Conv2D(128,(7,7),activation='relu', kernel_initializer=WeightInit1, bias_initializer = BiasInit ,kernel_regularizer=l2(2e-4)))
+        ConvolutionNetwork.add(MaxPooling2D())
+        ConvolutionNetwork.add(Conv2D(128,(4,4),activation='relu', kernel_initializer=WeightInit1, bias_initializer = BiasInit ,kernel_regularizer=l2(2e-4)))
+        ConvolutionNetwork.add(MaxPooling2D())
+        ConvolutionNetwork.add(Conv2D(256,(4,4),activation='relu', kernel_initializer=WeightInit1, bias_initializer = BiasInit ,kernel_regularizer=l2(2e-4)))
+        ConvolutionNetwork.add(Flatten())
+        ConvolutionNetwork.add(Dense(4096,activation="sigmoid", kernel_initializer=WeightInit2, bias_initializer = BiasInit ,kernel_regularizer=l2(1e-3)))
 
-        merge_layer = Lambda(euclidean_dist)([encoded_l,encoded_r])
-        prediction = Dense(1,activation='sigmoid')(merge_layer)
-        self.model = Model(inputs=[left_input,right_input],outputs=prediction)
+        # Intermediate output of the Siamese Network of left and right
+        encoded_l = ConvolutionNetwork(left_input)      # vector sized: 4096 elements, of the left side
+        encoded_r = ConvolutionNetwork(right_input)     # vector sized: 4096 elements, of the left side
 
-        optimizer = SGD(lr = 0.001, momentum = 0.5)
+        # TODO: insert a break point here to see if we are processing a batch of pairs or a single pair
+        merge_layer = Lambda(euclidean_dist)([encoded_l, encoded_r])    # merging the two intermediate vectros to a single value using euclidean distance functino
+
+        prediction = Dense(1, activation='sigmoid')(merge_layer)        # the final scalar output of the siamese network, value for each pair in the batch
+        self.model = Model(inputs=[left_input, right_input], outputs=prediction)
+
+        optimizer = SGD(lr=0.001, momentum=0.5)     # stochastic gradient descent optimizer
 
         """
         lr=3e-4, weight_decay=6e-5
@@ -187,8 +194,7 @@ class SiameseNetwork():
         #lr_multipliers = {"Conv1": 1, "Conv2":1, "Conv3": 1, "Conv4": 1, "Dense1": 1}
         #opt =  Adam_dlr(learning_rate = 0.00006)
         #opt = SGD(lr = self.lr)
-        self.model.compile(loss = 'binary_crossentropy', optimizer = optimizer, metrics = ['accuracy'])
-
+        self.model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
 
     def test_pairs(self,  file_name ,n_way = 20):
@@ -335,10 +341,24 @@ class SiameseNetwork():
 
 if __name__ == "__main__":
 
-    model = siamese_network(batch_size = 32)
+    model = SiameseNetwork(batch_size=32)
 
     #182000
     #216000
     #model.train_on_data(load_prev_model = True)
 
     model.train_on_data(load_prev_model = False)
+
+    """
+    training:	1100 pairs
+    test: 		500 pairs
+    validation: ? (no need for now)
+    
+    from github
+    different sized of training data ( are we traiing once ?)
+    30k,90k ..
+    evaluate 
+    50k training iterations, evaluate model every 500 epochs
+    in our terms : 5k training iterations, 
+    evaluate model every 50 epocks
+    """
