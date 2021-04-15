@@ -1,5 +1,6 @@
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import random
@@ -8,15 +9,15 @@ import cv2
 import h5py
 import time
 
-from preprocess_data import dataloader
+#from preprocess_data import dataloader
 
 from tqdm import tqdm
 from math import ceil
 
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
-from skimage.transform import rotate, AffineTransform, warp, rescale
-from skimage.util import random_noise
+#from skimage.transform import rotate, AffineTransform, warp, rescale
+#from skimage.util import random_noise
 
 import tensorflow as tf
 from tensorflow.keras import Model, Sequential
@@ -337,17 +338,48 @@ class SiameseNetwork():
                 K.set_value(self.model.optimizer.learning_rate, K.get_value(self.model.optimizer.learning_rate) * 0.99)
                 K.set_value(self.model.optimizer.momentum, min(0.9,K.get_value(self.model.optimizer.momentum) + linear_inc))
 
+def getImageName(number):
+    if (number // 10 == 0):
+        return '000'+str(number)+'.jpg'
+    else:
+        return '00' + str(number) + '.jpg'
 
+
+def getBatchData(data,sizeBatch,iBatch):
+    startIndex = sizeBatch * iBatch
+    for i in range(sizeBatch):
+        labelLeft = data[startIndex + i, 0]
+        labelRight = data[startIndex + i, 2]
+        score = (labelRight == labelLeft)
+        imageName = getImageName(data[startIndex + i,1])
+        dataRight = cv2.imread('LFWA\\'+labelLeft+'\\' +imageName)
+
+
+    return 0,0
 
 if __name__ == "__main__":
+    numEpochs = 10
+    trainLabels = pd.read_csv("train.csv")
+    testLabels = pd.read_csv("test.csv")
+    sizeTrain = trainLabels.shape[0]
+    sizeTest = trainLabels.shape[0]
+    sizeBatch = 32
+    numBatches = sizeTrain // sizeBatch
 
-    model = SiameseNetwork(batch_size=32)
+    model = SiameseNetwork(batch_size=sizeBatch)
+    #model.train_on_data(load_prev_model = False)
 
-    #182000
-    #216000
-    #model.train_on_data(load_prev_model = True)
+    for iEpoch in range(numEpochs):
+        trainLabelsShuff = trainLabels.sample(frac=1)
 
-    model.train_on_data(load_prev_model = False)
+        for iBatch in range(numBatches):
+            X_Batch, y_Batch = getBatchData(trainLabelsShuff, iBatch, sizeBatch)
+
+        # loss = self.model.train_on_batch(X_batch, y_batch)
+        # train_loss.append(loss[0])
+        # train_acc.append(loss[1])
+
+
 
     """
     training:	1100 pairs
