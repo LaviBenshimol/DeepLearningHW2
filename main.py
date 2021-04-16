@@ -291,7 +291,7 @@ class SiameseNetwork():
 
             # X_batch = tf.constant(value=[dataLeft, dataRight],dtype='uint8', shape=[250, 250,2 sizeBatch])
 
-        return np.asarray(X_Batch_Left), np.asarray(X_Batch_Right), np.expand_dims(np.asarray(y_Batch), -1)
+        return [np.asarray(X_Batch_Left), np.asarray(X_Batch_Right)], np.expand_dims(np.asarray(y_Batch), -1)
 
 
     def training(self, sizeBatch, load_prev_model = False ,best_acc = 0):
@@ -322,6 +322,7 @@ class SiameseNetwork():
         sizeTraining = trainLabels.shape[0]
         numBatches = sizeTraining // sizeBatch
         trainLabelsShuff = trainLabels.sample(frac=1)
+        #trainLabelsShuff = trainLabels
 
 
         train_loss, train_acc = [],[]
@@ -332,16 +333,18 @@ class SiameseNetwork():
         # TODO: while untill we finish epoch
 
         for iBatch in range(0, numBatches):
-            X_Batch_Left, X_Batch_Right, y_batch = self.getBatchData(trainLabelsShuff, iBatch, sizeBatch)  # our version
+            X_Batch, y_batch = self.getBatchData(trainLabelsShuff, iBatch, sizeBatch)  # our version
 
             # print(X_batch[0].shape,X_batch[1].shape, y_batch.shape)
             # print(type(X_batch), type(y_batch))
             # return
 
-            loss = self.model.train_on_batch([X_Batch_Left, X_Batch_Right], y_batch)
+            loss = self.model.train_on_batch(X_Batch, y_batch)
+            print(str((iBatch + 1)) + ". Loss = " + str(loss[0]) + " , Accuracy = " + str(loss[1]))
             train_loss.append(loss[0])
             train_acc.append(loss[1])
 
+        return mean(loss)
         # if i % 500 == 0:
         #     train_loss = mean(train_loss)
         #     train_acc = mean(train_acc)
@@ -471,9 +474,10 @@ class SiameseNetwork():
 def getImageNumber(number):
     if (number // 10 == 0):
         return '_000'+str(number)+'.jpg'
-    else:
+    elif(number // 100 == 0):
         return '_00' + str(number) + '.jpg'
-
+    else:
+        return '_0' + str(number) + '.jpg'
 
 
 
