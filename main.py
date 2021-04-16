@@ -122,6 +122,7 @@ class data_gen:
                     #print(X_left_batch[0], X_right_batch[1])
 
                     yield [X_left_batch, X_right_batch], y_batch
+
 def euclidean_dist(vect):
     x, y = vect
     sum_square = K.sum(K.square(x-y), axis=1, keepdims=True)
@@ -252,8 +253,136 @@ class SiameseNetwork():
         self.model.load_weights(best_model)
         print('\n\n----------------------------------------------------Loading saved Model----------------------------------------------------\n\n')
 
+    def getBatchData(self, data, iBatch, sizeBatch):
+        startIndex = sizeBatch * iBatch
+        #sizeBatch = 1
+        X_Batch_Left = []
+        X_Batch_Right = []
+        y_Batch = []
+        for i in range(sizeBatch):
+            row_index = startIndex + i
+            labelLeft = data.iloc[row_index, 0]
+            labelRight = data.iloc[row_index, 2]
 
-    def train_on_data(self, load_prev_model = False ,best_acc = 0):
+            # Similer of Different: True = Similar , False = Different
+            if labelRight == labelLeft:
+                score = 1
+            else:
+                score = 0
+
+
+            # Getting the Left image
+            imageNumber1 = getImageNumber(data.iloc[row_index, 1])
+            pathLeft = "LFWA\\" + labelLeft + "\\" + labelLeft + imageNumber1
+            dataLeft = cv2.imread(pathLeft, cv2.IMREAD_GRAYSCALE)
+
+            # Getting the Right image
+            imageNumber2 = getImageNumber(data.iloc[row_index, 3])
+            pathRight = "LFWA\\" + labelRight + "\\" + labelRight + imageNumber2
+            dataRight = cv2.imread(pathRight, cv2.IMREAD_GRAYSCALE)
+
+            X_Batch_Left.append(np.asarray(dataLeft))
+            X_Batch_Right.append(np.asarray(dataRight))
+            y_Batch.append(score)
+
+            # plt.imshow(dataRight)
+            # plt.gray()
+            # plt.show()
+
+            # X_batch = tf.constant(value=[dataLeft, dataRight],dtype='uint8', shape=[250, 250,2 sizeBatch])
+
+        return np.asarray(X_Batch_Left), np.asarray(X_Batch_Right), np.expand_dims(np.asarray(y_Batch), -1)
+
+
+    def training(self, sizeBatch, load_prev_model = False ,best_acc = 0):
+
+        self.val_acc_filename = 'val_acc'
+        self.v_acc = []
+        self.train_metrics = []
+        self.best_acc = best_acc
+        self.model_details = {}
+        self.model_details['acc'] = 0
+        self.model_details['iter'] = 0
+        self.model_details['model_lr'] = 0.0
+        self.model_details['model_mm'] = 0.0
+        linear_inc = 0.01
+        self.start = 1
+        self.k = 0
+
+        # Don't know what this part does
+        # if load_prev_model:
+        #     self.continue_training()
+
+
+
+        # data_generator = data_gen(self.batch_size, isAug = True)
+        # train_generator = data_generator.load_data_batch()
+
+        trainLabels = pd.read_csv("train.csv")
+        sizeTraining = trainLabels.shape[0]
+        numBatches = sizeTraining // sizeBatch
+        trainLabelsShuff = trainLabels.sample(frac=1)
+
+
+        train_loss, train_acc = [],[]
+        i = 0
+
+        start_time = time.time()
+
+        # TODO: while untill we finish epoch
+
+        for iBatch in range(0, numBatches):
+            X_Batch_Left, X_Batch_Right, y_batch = self.getBatchData(trainLabelsShuff, iBatch, sizeBatch)  # our version
+
+            # print(X_batch[0].shape,X_batch[1].shape, y_batch.shape)
+            # print(type(X_batch), type(y_batch))
+            # return
+
+            loss = self.model.train_on_batch([X_Batch_Left, X_Batch_Right], y_batch)
+            train_loss.append(loss[0])
+            train_acc.append(loss[1])
+
+        # if i % 500 == 0:
+        #     train_loss = mean(train_loss)
+        #     train_acc = mean(train_acc)
+        #     self.train_metrics.append([train_loss, train_acc])
+        #
+        #     # loss_data.append(loss)
+        #
+        #     val_acc = self.test_validation_acc(wA_file, uA_file, n_way=20)
+        #     # val_acc = [wA_acc, uA_acc]
+        #     self.v_acc.append(val_acc)
+        #     if val_acc[0] > self.best_acc:
+        #         print('\n***Saving model***\n')
+        #         # self.model.save_weights("model_{}_val_acc_{}.h5".format(i,val_acc[0]))
+        #         self.model.save_weights("best_model/best_model.h5".format(i, val_acc[0]))
+        #         self.model_details['acc'] = val_acc[0]
+        #         self.model_details['iter'] = i
+        #         self.model_details['model_lr'] = K.get_value(self.model.optimizer.learning_rate)
+        #         self.model_details['model_mm'] = K.get_value(self.model.optimizer.momentum)
+        #         # siamese_net.save(model_path)
+        #         self.best_acc = val_acc[0]
+        #         with open(self.val_acc_filename, "wb") as f:
+        #             pkl.dump((self.v_acc, self.train_metrics), f)
+        #         with open('best_model/model_details.pkl', "wb") as f:
+        #             pkl.dump(self.model_details, f)
+        #
+        #     end_time = time.time()
+        #     print(
+        #         'Iteration :{}  lr :{:.8f} momentum :{:.6f} avg_loss: {:.4f} avg_acc: {:.4f} wA_acc :{:.2f} %  u_Acc: {:.2f} % time_taken {:.2f} s'.format(
+        #             i, K.get_value(self.model.optimizer.learning_rate), K.get_value(self.model.optimizer.momentum),
+        #             train_loss, train_acc, val_acc[0], val_acc[1], end_time - start_time))
+        #
+        #     #
+        #     train_loss, train_acc = [], []
+        #
+        # if i % 5000 == 0:
+        #     K.set_value(self.model.optimizer.learning_rate, K.get_value(self.model.optimizer.learning_rate) * 0.99)
+        #     K.set_value(self.model.optimizer.momentum,
+        #                 min(0.9, K.get_value(self.model.optimizer.momentum) + linear_inc))
+
+
+    def train_on_data2(self, load_prev_model = False ,best_acc = 0):
 
         model_json = self.model.to_json()
         wA_file ='wA_val_10_split_images.pkl'
@@ -338,44 +467,29 @@ class SiameseNetwork():
                 K.set_value(self.model.optimizer.learning_rate, K.get_value(self.model.optimizer.learning_rate) * 0.99)
                 K.set_value(self.model.optimizer.momentum, min(0.9,K.get_value(self.model.optimizer.momentum) + linear_inc))
 
-def getImageName(number):
+
+def getImageNumber(number):
     if (number // 10 == 0):
-        return '000'+str(number)+'.jpg'
+        return '_000'+str(number)+'.jpg'
     else:
-        return '00' + str(number) + '.jpg'
+        return '_00' + str(number) + '.jpg'
 
 
-def getBatchData(data,sizeBatch,iBatch):
-    startIndex = sizeBatch * iBatch
-    for i in range(sizeBatch):
-        labelLeft = data[startIndex + i, 0]
-        labelRight = data[startIndex + i, 2]
-        score = (labelRight == labelLeft)
-        imageName = getImageName(data[startIndex + i,1])
-        dataRight = cv2.imread('LFWA\\'+labelLeft+'\\' +imageName)
 
-
-    return 0,0
 
 if __name__ == "__main__":
     numEpochs = 10
-    trainLabels = pd.read_csv("train.csv")
-    testLabels = pd.read_csv("test.csv")
-    sizeTrain = trainLabels.shape[0]
-    sizeTest = trainLabels.shape[0]
     sizeBatch = 32
-    numBatches = sizeTrain // sizeBatch
+
+    # testLabels = pd.read_csv("test.csv")
+    # sizeTest = trainLabels.shape[0]
+
 
     model = SiameseNetwork(batch_size=sizeBatch)
-    #model.train_on_data(load_prev_model = False)
+    #TODO: while on stopping criria numOfEpoch / not Improving in LOSS
 
-    for iEpoch in range(numEpochs):
-        trainLabelsShuff = trainLabels.sample(frac=1)
+    loss = model.training(sizeBatch)
 
-        for iBatch in range(numBatches):
-            X_Batch, y_Batch = getBatchData(trainLabelsShuff, iBatch, sizeBatch)
-
-        # loss = self.model.train_on_batch(X_batch, y_batch)
         # train_loss.append(loss[0])
         # train_acc.append(loss[1])
 
