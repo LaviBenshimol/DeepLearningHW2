@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import random
-import pickle as pkl
 import cv2
 import h5py
 import time
@@ -34,94 +33,7 @@ np.random.seed(42)
 random.seed(42)
 tf.random.set_seed(42)
 
-def pkl_data(filename):
-    with open(filename,'rb') as f:
-        X_t, y_t = pkl.load(f)
-    return X_t, y_t
 
-
-def affinetransform(image):
-    transform = AffineTransform(translation=(-30,0))
-    warp_image = warp(image,transform, mode="wrap")
-    return warp_image
-
-def anticlockwise_rotation(image):
-    angle= random.randint(0,45)
-    return rotate(image, angle)
-
-def clockwise_rotation(image):
-    angle= random.randint(0,45)
-    return rotate(image, -angle)
-
-
-def transform(image):
-    if random.random() > 0.5:
-        image = affinetransform(image)
-    if random.random() > 0.5:
-        image = anticlockwise_rotation(image)
-    if random.random() > 0.5:
-        image = clockwise_rotation(image)
-
-    return image
-
-
-
-class data_gen:
-
-    def __init__(self, batch_size=32, isAug = True):
-        self.batch_size = batch_size
-        self.isAug = isAug
-
-    def load_data_batch(self):
-
-        training_file = 'training_file_183160.pkl'
-        X,y = pkl_data(training_file)
-        load_batch = 1024
-        train_len = len(X)
-
-
-        while(True):
-            for i in range(int(train_len/load_batch)):
-                start = i*load_batch
-                end = (i+1)*load_batch if i != int(train_len/load_batch) else -1
-                X_t = X[start:end]
-                y_t = y[start:end]
-                X_t, y_t = shuffle(X_t, y_t, random_state=0)
-
-                for offset in range(0, load_batch, self.batch_size):
-                    X_left, X_right, _y = X_t[offset:offset +self.batch_size,0],X_t[offset:offset + self.batch_size,1],y_t[offset:offset + self.batch_size]
-
-                    #X_left, X_right, y = X_t[offset:offset +5,0],X_t[offset:offset + 5,1],y_t[offset:offset + 5]
-
-                    X_left_batch = []
-                    X_right_batch = []
-                    y_batch = []
-
-
-                    for i in range(len(X_left)):
-
-                        if random.random() >1024:
-                            X_i = np.expand_dims(transform(mpimg.imread(X_left[i])), axis = 2)
-                            X_j = np.expand_dims(transform(mpimg.imread(X_right[i])), axis = 2)
-
-                            X_left_batch.append(X_i)
-                            X_right_batch.append(X_j)
-                            y_batch.append(_y[i])
-                        else:
-                            X_i = np.expand_dims(mpimg.imread(X_left[i]), axis = 2)
-                            X_j = np.expand_dims(mpimg.imread(X_right[i]), axis = 2)
-
-                            X_left_batch.append(X_i)
-                            X_right_batch.append(X_j)
-                            y_batch.append(_y[i])
-
-                    X_left_batch, X_right_batch, y_batch = np.asarray(X_left_batch), np.asarray(X_right_batch), np.asarray(y_batch)
-                    X_left_batch, X_right_batch, y_batch  = shuffle(X_left_batch, X_right_batch, y_batch, random_state = 0)
-
-                    #print("print_shape",X_left_batch.shape, X_right_batch.shape, y_batch.shape)
-                    #print(X_left_batch[0], X_right_batch[1])
-
-                    yield [X_left_batch, X_right_batch], y_batch
 
 def euclidean_dist(vect):
     x, y = vect
@@ -132,9 +44,10 @@ def euclidean_dist(vect):
 class SiameseNetwork():
 
     # TODO: lrValues = [0.1, 0.01, 0.001, 0.0001]
-    def __init__(self, initial_learning_rate=0.01, batch_size=64):
+    def __init__(self, initial_learning_rate=0.001, batch_size=64):
         self.batch_size = batch_size
         self.lr = initial_learning_rate
+        self.iTest = 0
         self.get_model()
 
     # TODO: check which euclidean distance to use
@@ -199,60 +112,6 @@ class SiameseNetwork():
         self.model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
 
-    def test_pairs(self,  file_name ,n_way = 20):
-
-        correct_pred = 0
-        X,y = pkl_data(file_name)
-        #print(X.shape, y.shape)
-
-        j = 0
-        for i in range(0,len(X),n_way):
-            X_left, X_right,_y  = X[i: i+n_way,0],X[i: i+n_way,1], y[i : i+n_way]
-            #X_left, X_right,y = sub_data_X[:,0], sub_data_X[:,1], sub_data_y
-            X_left, X_right, _y = np.array(X_left), np.array(X_right), np.array(_y)
-
-            correct_pred += self.test_one_shot(X_left, X_right, _y)
-
-
-        acc =  correct_pred*100/(len(X)/n_way)
-        return acc
-
-
-
-    def test_one_shot(self, X_left,X_right, y):
-        prob = self.model.predict([X_left,X_right])
-        """
-        print(prob)
-        print(np.argmax(prob))
-        print(np.argmax(y))
-        return
-        """
-        if np.argmax(prob) == np.argmax(y):
-            return 1
-        else:
-            return 0
-
-    def test_validation_acc(self,wA_file, uA_file, n_way=20):
-        wA_acc = self.test_pairs(wA_file,n_way)
-        uA_acc = self.test_pairs(uA_file, n_way)
-        return (wA_acc, uA_acc)
-
-    def continue_training(self):
-
-        with open('best_model/model_details.pkl','rb') as f:
-            model_details = pkl.load(f)
-
-        with open(self.val_acc_filename, "rb") as f:
-            self.v_acc,self.train_metrics  = pkl.load(f)
-
-        self.best_acc = model_details['acc']
-        self.start = model_details['iter']+1
-        K.set_value(self.model.optimizer.learning_rate, model_details['model_lr'])
-        K.set_value(self.model.optimizer.momentum, model_details['model_mm'])
-        best_model = 'best_model/best_model.h5'
-        self.model.load_weights(best_model)
-        print('\n\n----------------------------------------------------Loading saved Model----------------------------------------------------\n\n')
-
     def getBatchData(self, data, iBatch, sizeBatch):
         startIndex = sizeBatch * iBatch
         #sizeBatch = 1
@@ -275,11 +134,12 @@ class SiameseNetwork():
             imageNumber1 = getImageNumber(data.iloc[row_index, 1])
             pathLeft = "LFWA\\" + labelLeft + "\\" + labelLeft + imageNumber1
             dataLeft = cv2.imread(pathLeft, cv2.IMREAD_GRAYSCALE)
-
+            dataLeft = dataLeft / 255
             # Getting the Right image
             imageNumber2 = getImageNumber(data.iloc[row_index, 3])
             pathRight = "LFWA\\" + labelRight + "\\" + labelRight + imageNumber2
             dataRight = cv2.imread(pathRight, cv2.IMREAD_GRAYSCALE)
+            dataRight = dataRight / 255
 
             X_Batch_Left.append(np.asarray(dataLeft))
             X_Batch_Right.append(np.asarray(dataRight))
@@ -314,7 +174,6 @@ class SiameseNetwork():
         #     self.continue_training()
 
 
-
         # data_generator = data_gen(self.batch_size, isAug = True)
         # train_generator = data_generator.load_data_batch()
 
@@ -327,7 +186,6 @@ class SiameseNetwork():
 
         train_loss, train_acc = [],[]
         i = 0
-
         start_time = time.time()
 
         # TODO: while untill we finish epoch
@@ -343,6 +201,18 @@ class SiameseNetwork():
             print(str((iBatch + 1)) + ". Loss = " + str(loss[0]) + " , Accuracy = " + str(loss[1]))
             train_loss.append(loss[0])
             train_acc.append(loss[1])
+
+        totalTime = time.time() - start_time
+
+        avgVecBatchTime = totalTime / numBatches
+        print("Average time for a Batch: " + str(avgVecBatchTime))
+        print("Time for one Epoch: " + str(totalTime))
+
+        # Update Learning Rate at the end of one Epoch
+        K.set_value(self.model.optimizer.learning_rate, K.get_value(self.model.optimizer.learning_rate) * 0.99)
+        # maybe update the momentum value in the future
+        # K.set_value(self.model.optimizer.momentum,
+        #             min(0.9, K.get_value(self.model.optimizer.momentum) + linear_inc))
 
         return mean(loss)
         # if i % 500 == 0:
@@ -384,7 +254,21 @@ class SiameseNetwork():
         #     K.set_value(self.model.optimizer.momentum,
         #                 min(0.9, K.get_value(self.model.optimizer.momentum) + linear_inc))
 
+    def testing(self, sizeBatch):
+        testLabels = pd.read_csv("test.csv")
+        sizeTesting = testLabels.shape[0]
 
+        X_Batch_Test, y_Batch_Test = self.getBatchData(testLabels, self.iTest, sizeBatch)
+
+        prob = np.asarray(self.model.predict([X_Batch_Test[0], X_Batch_Test[1]]))
+        acc = sum(np.round(prob) == y_Batch_Test) / sizeBatch
+        # print("prob = " + str(prob))
+
+        # for i in range(sizeBatch):
+        #     self.test_one_shot(X_left=X_Batch[0], X_right=X_Batch[1], y=y_Batch)
+
+        return 100*acc
+"""
     def train_on_data2(self, load_prev_model = False ,best_acc = 0):
 
         model_json = self.model.to_json()
@@ -419,11 +303,6 @@ class SiameseNetwork():
         train_loss, train_acc = [],[]
         for i in range(self.start,1000000):
 
-            """
-            if self.k==50:
-                K.set_value(model.model.optimizer.learning_rate, K.get_value(model.model.optimizer.learning_rate) * 0.9)
-                self.k = 0
-            """
 
             start_time = time.time()
             X_batch, y_batch = next(train_generator)
@@ -469,7 +348,7 @@ class SiameseNetwork():
             if i % 5000 == 0:
                 K.set_value(self.model.optimizer.learning_rate, K.get_value(self.model.optimizer.learning_rate) * 0.99)
                 K.set_value(self.model.optimizer.momentum, min(0.9,K.get_value(self.model.optimizer.momentum) + linear_inc))
-
+"""
 
 def getImageNumber(number):
     if (number // 10 == 0):
@@ -482,8 +361,8 @@ def getImageNumber(number):
 
 
 if __name__ == "__main__":
-    numEpochs = 10
-    sizeBatch = 32
+    numEpochs = 30
+    sizeBatch = 64
 
     # testLabels = pd.read_csv("test.csv")
     # sizeTest = trainLabels.shape[0]
@@ -492,11 +371,26 @@ if __name__ == "__main__":
     model = SiameseNetwork(batch_size=sizeBatch)
     #TODO: while on stopping criria numOfEpoch / not Improving in LOSS
 
-    loss = model.training(sizeBatch)
+    startEpochTime = time.time()
+    for iEpoch in range(numEpochs):
+        print("Epoch number: " + str(iEpoch +1))
+
+        # Training phase:
+        loss = model.training(sizeBatch)
+
+        # Testing phase:
+        if iEpoch % 3 == 0:
+            Acc_test = model.testing(sizeBatch)
+            print("Test #" + str(model.iTest+1) + ":    Accuracy:" + str(Acc_test))
+
+        # Updating Learning Rate each Epoch (Need to see it's correct)
+
 
         # train_loss.append(loss[0])
         # train_acc.append(loss[1])
 
+    totalEpochsTime = time.time() - startEpochTime
+    print("Total Epochs Time: " + str(totalEpochsTime))
 
 
     """
